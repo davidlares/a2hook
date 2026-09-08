@@ -1,0 +1,380 @@
+library a2Hook;
+
+uses Windows, SysUtils, Classes, IdHTTP, dbisamtb, DB;
+
+type
+// DBISAM signature
+TDBISAMServerTrigger = procedure(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: string; CurrentRecord: TDBISAMRecord) of object;
+TRecordDataSetAccess = class(TDBISAMRecordDataSet)
+  public
+    property Handle;
+  end;
+
+// trigger hook class declaration
+TTriggerHook = class
+private
+FTableKeys: TStringList;
+function GetRecordDataSet(CurrentRecord: TDBISAMRecord): TRecordDataSetAccess;
+procedure SendEvent(const TableName, KeyField, KeyValue, Operation: string);
+function GetPrimaryKeyField(const TableName: string): string;
+function JsonEscape(const S: string): string;
+procedure RegisterTables;
+public
+OriginalAfterInsert: TMethod;
+OriginalAfterUpdate: TMethod;
+// constructor
+constructor Create;
+// destroy
+destructor Destroy; override;
+// hooks declaration
+procedure HookedAfterInsert(Sender: TObject; TriggerSession: TDBISAMSession;TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+procedure HookedAfterUpdate(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+end;
+// instance of the TTriggerHook
+var HookInstance: TTriggerHook;
+// memory offsets for a2Server.exe
+const
+MAINFORM_PTR_RVA = $270F34;
+ENGINE_OFFSET_IN_FORM = $0320;
+ON_AFTER_INSERT_OFFSET = $0128;
+ON_AFTER_UPDATE_OFFSET = $0140;
+// central logging procedure
+procedure WriteLog(const Msg: string);
+var
+  F: TextFile;
+begin
+  try
+    AssignFile(F, 'C:\a2hook\debug.txt');
+    if FileExists('C:\a2hook\debug.txt') then
+      Append(F)
+    else
+      Rewrite(F);
+    // write log
+    Writeln(F, FormatDateTime('yyyy-mm-dd hh:nn', Now) + ' - ' + Msg);
+    CloseFile(F);
+  except
+  end;
+end;
+// trigger hook methods for creation and destroy
+constructor TTriggerHook.Create;
+begin
+RegisterTables;
+end;
+
+destructor TTriggerHook.Destroy;
+begin
+FTableKeys.Free;
+inherited;
+end;
+
+// register tables
+procedure TTriggerHook.RegisterTables;
+begin
+  FTableKeys := TStringList.Create;
+  FTableKeys.Values['Sinventario'] := 'FI_CODIGO';
+  FTableKeys.Values['SinvDep'] := 'FT_CODIGOPRODUCTO';
+  FTableKeys.Values['a2InvCostosPrecios'] := 'FIC_CODEITEM';
+end;
+
+// getting the record data set (mismatch aggregation)
+function TTriggerHook.GetRecordDataSet(CurrentRecord: TDBISAMRecord): TRecordDataSetAccess;
+begin
+  Result := TRecordDataSetAccess(PPointer(NativeUInt(CurrentRecord) + 4)^);
+end;
+// getting the primary key field
+function TTriggerHook.GetPrimaryKeyField(const TableName: string): string;
+begin
+  Result := FTableKeys.Values[TableName];
+end;
+
+function ReadNullTerminatedString(P: PByte): string;
+var
+  S: string;
+begin
+  S := '';
+  while (P^ <> 0) do
+  begin
+    S := S + Chr(P^);
+    Inc(P);
+  end;
+  Result := S;
+end;
+
+{ AfterInsert Hook }
+
+procedure TTriggerHook.HookedAfterInsert(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+var
+OrigMethod: TDBISAMServerTrigger;
+RDS: TRecordDataSetAccess;
+CleanTableName: string;
+RecordBuffer: Pointer;
+KeyField: string;
+KeyValue: string;
+begin
+WriteLog('*** HookedAfterInsert FIRED ***');
+CleanTableName := string(PAnsiChar(TableName));
+WriteLog('AfterInsert TableName: ' + CleanTableName);
+// callling the original insert
+if Assigned(OriginalAfterInsert.Code)
+then
+begin
+WriteLog('Calling original AfterInsert trigger...');
+TMethod(OrigMethod) := OriginalAfterInsert;
+OrigMethod(Sender, TriggerSession, TriggerDatabase, TableName, CurrentRecord);
+end;
+try
+if CleanTableName = 'SFixed' then
+begin
+  WriteLog('SFixed table untracked');
+  Exit
+end;
+// getting the key field
+KeyField := GetPrimaryKeyField(CleanTableName);
+WriteLog('Resolved KeyField: ' + KeyField);
+// evaluating
+if KeyField = '' then
+begin
+WriteLog('AfterUpdate: no registered primary key for table.');
+Exit;
+end;
+if CurrentRecord <> nil then
+begin
+  RDS := GetRecordDataSet(CurrentRecord);
+  if RDS = nil then
+  begin
+    WriteLog('RDS = NIL');
+    Exit;
+  end;
+  RecordBuffer := Pointer(PCardinal(NativeUInt(RDS) + 640)^);
+  if RecordBuffer = nil then
+  begin
+    WriteLog('RecordBuffer = NIL');
+    Exit;
+  end;
+  if CurrentRecord <> nil then
+    // getting the sku
+    KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + 26));
+    WriteLog('Extracted KeyValue: [' + KeyValue + ']');
+    // sending event
+    SendEvent(TableName, KeyField, KeyValue,'INSERT');
+end;
+except
+on E: Exception do
+begin
+WriteLog('INSERT ERR: ' + E.ClassName + ': ' + E.Message);
+end;
+end;
+end;
+
+{ AfterUpdate Hook }
+
+procedure TTriggerHook.HookedAfterUpdate(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+var
+  OrigMethod: TDBISAMServerTrigger; 
+  RDS: TRecordDataSetAccess;
+  CleanTableName: string;
+  RecordBuffer: Pointer;
+  KeyField: string;
+  KeyValue: string;
+begin
+  WriteLog('*** HookedAfterUpdate FIRED ***');
+  CleanTableName := string(PAnsiChar(TableName));
+  WriteLog('AfterUpdate TableName: ' + CleanTableName);
+  // checking if assignation was made
+  if Assigned(OriginalAfterUpdate.Code) then
+  begin
+  WriteLog('Calling original AfterUpdate trigger...');
+  TMethod(OrigMethod) := OriginalAfterUpdate;
+  OrigMethod(Sender, TriggerSession, TriggerDatabase, TableName, CurrentRecord);
+  end;
+// adding custom logic
+try
+if CleanTableName = 'SFixed' then
+begin
+  WriteLog('SFixed table untracked');
+  Exit
+end;
+// getting the key field
+KeyField := GetPrimaryKeyField(CleanTableName);
+WriteLog('Resolved KeyField: ' + KeyField);
+// evaluating
+if KeyField = '' then
+begin
+WriteLog('AfterUpdate: no registered primary key for table.');
+Exit;
+end;
+if CurrentRecord <> nil then
+begin
+  RDS := GetRecordDataSet(CurrentRecord);
+  if RDS = nil then
+  begin
+    WriteLog('RDS = NIL');
+    Exit;
+  end;
+  RecordBuffer := Pointer(PCardinal(NativeUInt(RDS) + 640)^);
+  if RecordBuffer = nil then
+  begin
+    WriteLog('RecordBuffer = NIL');
+    Exit;
+  end;
+  if CurrentRecord <> nil then
+    // getting the sku
+    KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + 26));
+    WriteLog('Extracted KeyValue: [' + KeyValue + ']');
+    // sending event
+    SendEvent(TableName, KeyField, KeyValue,'UPDATE');
+end;
+except
+on E: Exception do
+begin
+WriteLog('UPDATE ERR: ' + E.ClassName + ': ' + E.Message);
+end;
+end;
+end;
+
+procedure TTriggerHook.SendEvent(const TableName, KeyField, KeyValue, Operation: string);
+var
+  Body: TStringStream;
+  HTTP: TIdHTTP;
+  Json: string;
+begin
+  Json := '{' +
+    '"timestamp":"' + JsonEscape(FormatDateTime('yyyy-mm-dd"T"hh:nn:ss', Now)) + '",' +
+    '"operation":"' + JsonEscape(Operation) + '",' +
+    '"table":"' + JsonEscape(TableName) + '",' +
+    '"keyField":"' + JsonEscape(KeyField) + '",' +
+    '"keyValue":"' + JsonEscape(KeyValue) + '"' +
+  '}';
+  // writing json to log
+  WriteLog('JSON: ' + Json);
+  // HTTP client
+  HTTP := TIdHTTP.Create(nil);
+  try
+    HTTP.Request.ContentType := 'application/json';
+    HTTP.ConnectTimeout := 3000;
+    HTTP.ReadTimeout := 3000;
+    // data stream
+    Body := TStringStream.Create(
+      UTF8Encode(Json)
+    );
+    try
+      HTTP.Post('http://127.0.0.1:3000/api/db-trigger', Body);
+    finally
+      Body.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      WriteLog('SendEvent HTTP ERROR: ' + E.ClassName + ': ' + E.Message);
+    end;
+  end;
+  // free HTTP instance
+  HTTP.Free;
+end;
+
+function TTriggerHook.JsonEscape(const S: string): string;
+begin
+  Result := S;
+  Result := StringReplace(Result, '\', '\\', [rfReplaceAll]);
+  Result := StringReplace(Result, '"', '\"', [rfReplaceAll]);
+  Result := StringReplace(Result, #8, '\b', [rfReplaceAll]);
+  Result := StringReplace(Result, #9, '\t', [rfReplaceAll]);
+  Result := StringReplace(Result, #10, '\n', [rfReplaceAll]);
+  Result := StringReplace(Result, #12, '\f', [rfReplaceAll]);
+  Result := StringReplace(Result, #13, '\r', [rfReplaceAll]);
+end;
+
+// injection logic
+function ApplyHook(Parameter: Pointer): Integer; stdcall;
+var
+EngineBaseAddress: Pointer;
+EnginePtrAddress: Pointer;
+InsertEventPtr: ^TMethod;
+UpdateEventPtr: ^TMethod;
+ModuleBase: NativeUInt;
+begin
+Result := 0;
+ModuleBase := GetModuleHandle(nil);
+// evaluating module base
+if ModuleBase = 0 then
+begin
+WriteLog('ERROR: Could not get ModuleBase handle');
+Exit;
+end;
+// module base
+WriteLog(Format('ModuleBase: %p', [Pointer(ModuleBase)]));
+// MainForm global variable
+EnginePtrAddress := Pointer(ModuleBase + MAINFORM_PTR_RVA);
+// main form variable address
+WriteLog(Format('MainForm global variable address: %p', [EnginePtrAddress]));
+// First dereference: [00670F34] = 00675F90
+EngineBaseAddress := Pointer(PPointer(EnginePtrAddress)^);
+// checking engine base address
+if EngineBaseAddress = nil then
+begin
+WriteLog('ERROR: MainForm global variable contains NIL!');
+Exit;
+end;
+// mainForm global variable
+WriteLog(Format('MainForm global variable points to: %p',[EngineBaseAddress]));
+// Second dereference: [00675F90] = actual TMainForm instance
+EngineBaseAddress := Pointer(PPointer(EngineBaseAddress)^);
+// engine base address evaluationg
+if EngineBaseAddress = nil then
+begin
+WriteLog('ERROR: Actual TMainForm instance is NIL!');
+Exit;
+end;
+// TMainForm instance
+WriteLog(Format('Actual TMainForm instance: %p',[EngineBaseAddress]));
+// reading DBISAM Engine instance
+EngineBaseAddress := Pointer(PPointer(NativeUInt(EngineBaseAddress) + ENGINE_OFFSET_IN_FORM)^);
+// checking engine
+if EngineBaseAddress = nil then
+begin
+WriteLog('ERROR: TMainForm.a2Server contains NIL!');
+Exit;
+end;
+WriteLog(Format('TDBISAMEngine instance: %p',[EngineBaseAddress]));
+// event addresses
+InsertEventPtr := Pointer(NativeUInt(EngineBaseAddress) + ON_AFTER_INSERT_OFFSET);
+UpdateEventPtr := Pointer(NativeUInt(EngineBaseAddress) + ON_AFTER_UPDATE_OFFSET);
+// hook after insert
+HookInstance.OriginalAfterInsert := InsertEventPtr^;
+InsertEventPtr^.Code := @TTriggerHook.HookedAfterInsert;
+InsertEventPtr^.Data :=  HookInstance;
+WriteLog('AfterInsert hook applied successfully!');
+// hook after update
+HookInstance.OriginalAfterUpdate := UpdateEventPtr^;
+UpdateEventPtr^.Code := @TTriggerHook.HookedAfterUpdate;
+UpdateEventPtr^.Data := HookInstance;
+WriteLog('AfterUpdate hook applied successfully!');
+end;
+
+// DLL Entry point
+procedure DLLEntryPoint(Reason: Integer);
+var
+ThreadId: DWORD;
+begin
+case Reason of
+DLL_PROCESS_ATTACH:
+begin
+DisableThreadLibraryCalls(hInstance);
+WriteLog('=== DLL_PROCESS_ATTACH: a2Hook loaded into process memory ===');
+// hook instance
+HookInstance := TTriggerHook.Create;
+// creating a thread
+CreateThread(nil, 0, @ApplyHook,nil,0,ThreadId);
+end;
+DLL_PROCESS_DETACH:
+begin
+WriteLog('=== DLL_PROCESS_DETACH: Unloading a2Hook ===');
+HookInstance.Free;
+end;
+end;
+end;
+
+begin
+DllProc := @DLLEntryPoint;
+DLLEntryPoint(DLL_PROCESS_ATTACH);
+END.

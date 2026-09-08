@@ -1,0 +1,44 @@
+library a2Hook;
+
+uses
+  Windows,
+  SysUtils,
+  Classes,
+  dbisamtb,
+  DB,
+  Logger in 'Logger.pas',
+  HttpClient in 'HttpClient.pas',
+  Hook in 'Hook.pas';
+
+var
+  HookInstance: TTriggerHook;
+
+// DLL Entry point
+procedure DLLEntryPoint(Reason: Integer);
+var
+  ThreadId: DWORD;
+begin
+  // attach procedure
+  case Reason of
+    DLL_PROCESS_ATTACH:
+      begin
+        DisableThreadLibraryCalls(hInstance);
+        WriteLog('=== DLL_PROCESS_ATTACH: a2Hook loaded into process memory ===');
+        // instance create method call
+        HookInstance := TTriggerHook.Create;
+        CreateThread(nil, 0, @ApplyHook, HookInstance, 0, ThreadId);
+      end;
+    // detach procedure
+    DLL_PROCESS_DETACH:
+      begin
+        WriteLog('=== DLL_PROCESS_DETACH: Unloading a2Hook ===');
+        HookInstance.Free;
+        HookInstance := nil;
+      end;
+  end;
+end;
+
+begin
+  DllProc := @DLLEntryPoint;
+  DLLEntryPoint(DLL_PROCESS_ATTACH);
+END.

@@ -1,0 +1,156 @@
+unit Hook;
+
+interface
+
+uses Windows, SysUtils, Classes, dbisamtb, DB, Logger, HttpClient;
+
+function ApplyHook(Parameter: Pointer): Integer; stdcall;
+
+type
+  // DBISAM trigger signature
+  TDBISAMServerTrigger = procedure(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: string; CurrentRecord: TDBISAMRecord) of object;
+  // DBISAM Record data set signature
+  TRecordDataSetAccess = class(TDBISAMRecordDataSet)
+  public
+    property Handle;
+  end;
+  // hook instance
+  TTriggerHook = class
+  private
+    // table mapper
+    FTableKeys: TStringList;
+    // getting records, PKs and registering table aux function
+    function GetRecordDataSet(CurrentRecord: TDBISAMRecord): TRecordDataSetAccess;
+    function GetPrimaryKeyField(const TableName: string): string;
+    procedure RegisterTables;
+  public
+    // hook procedures from engine
+    OriginalAfterInsert: TMethod;
+    OriginalAfterUpdate: TMethod;
+    // constructor / destructor
+    constructor Create;
+    destructor Destroy; override;
+    // hooks declaration
+    procedure HookedAfterInsert(Sender: TObject; TriggerSession: TDBISAMSession;TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+    procedure HookedAfterUpdate(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+  end;
+implementation
+
+  const
+    // memory offsets for a2Server.exe
+    MAINFORM_PTR_RVA = $270F34;
+    ENGINE_OFFSET_IN_FORM = $0320;
+    ON_AFTER_INSERT_OFFSET = $0128;
+    ON_AFTER_UPDATE_OFFSET = $0140;
+
+  // reading null terminator (stopping sku detection)  
+  function ReadNullTerminatedString(P: PByte): string;
+  var
+    S: string;
+  begin
+    S := '';
+    while (P^ <> 0) do
+    begin
+      S := S + Chr(P^);
+      Inc(P);
+    end;
+    Result := S;
+  end;
+  // table mapper procedure
+  procedure TTriggerHook.RegisterTables;
+  begin
+    FTableKeys := TStringList.Create;
+    FTableKeys.Values['Sinventario'] := 'FI_CODIGO';
+    FTableKeys.Values['SinvDep'] := 'FT_CODIGOPRODUCTO';
+    FTableKeys.Values['a2InvCostosPrecios'] := 'FIC_CODEITEM';
+  end;
+  // constructor
+  constructor TTriggerHook.Create;
+  begin
+    RegisterTables;
+  end;
+  // destructor
+  destructor TTriggerHook.Destroy;
+  begin
+    FTableKeys.Free;
+    inherited;
+  end;
+  // hook instance (get record data set)
+  function TTriggerHook.GetRecordDataSet(CurrentRecord: TDBISAMRecord): TRecordDataSetAccess;
+  begin
+    Result := TRecordDataSetAccess(PPointer(NativeUInt(CurrentRecord) + 4)^);
+  end;
+  // hook instance (get PK field)
+  function TTriggerHook.GetPrimaryKeyField(const TableName: string): string;
+  begin
+    Result := FTableKeys.Values[TableName];
+  end;
+  // after insert hook
+  procedure TTriggerHook.HookedAfterInsert(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+  var
+    OrigMethod: TDBISAMServerTrigger;
+    RDS: TRecordDataSetAccess;
+    CleanTableName: string;
+    RecordBuffer: Pointer;
+    KeyField: string;
+    KeyValue: string;
+  begin
+    WriteLog('*** HookedAfterInsert FIRED ***');
+    // trimming tableName from memoru
+    CleanTableName := string(PAnsiChar(TableName));
+    WriteLog('AfterInsert TableName: ' + CleanTableName);
+    // checking existence of original method
+    if Assigned(OriginalAfterInsert.Code) then
+    begin
+      WriteLog('Calling original AfterInsert trigger...');
+      // calling the original method if found in a2Server.exe
+      TMethod(OrigMethod) := OriginalAfterInsert;
+      OrigMethod(Sender, TriggerSession, TriggerDatabase, TableName, CurrentRecord);
+    end;
+    // then
+    try
+    // avoid Sfixed
+    if CleanTableName = 'SFixed' then
+    begin
+      WriteLog('SFixed table is untracked');
+      Exit;
+    end;
+    // getting the PK
+    KeyField := GetPrimaryKeyField(CleanTableName);
+    WriteLog('Resolved KeyField: ' + KeyField);
+    // PK string is found
+    if KeyField = '' then
+    begin
+      WriteLog('AfterInsert: no registered primary key for table.');
+      Exit;
+    end;
+    // evaluating current record
+    if CurrentRecord <> nil then
+    begin
+      // getting the data set
+      RDS := GetRecordDataSet(CurrentRecord);
+      if RDS = nil then
+      begin
+        WriteLog('RDS = NIL');
+        Exit;
+      end;
+      // buffer for the record
+      RecordBuffer := Pointer(PCardinal(NativeUInt(RDS) + 640)^);
+      if RecordBuffer = nil then
+      begin
+        WriteLog('RecordBuffer = NIL');
+        Exit;
+      end;
+      // 26 positions after the buffer, we found the SKU
+      KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + 26));
+      // found
+      WriteLog('Extracted KeyValue: [' + KeyValue + ']');
+      // sending data
+      SendEvent(TableName, KeyField, KeyValue, 'INSERT');
+    end;
+  except
+    on E: Exception do
+      WriteLog('INSERT ERR: ' + E.ClassName + ': ' + E.Message);
+  end;
+end;
+end.

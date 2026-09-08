@@ -1,0 +1,34 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{00f8dfc4-d71d-4ffd-827d-a93c1dc37f1a}</ProjectGuid>
+  </PropertyGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <Projects Include="a2Hook.dproj" />
+  </ItemGroup>
+  <ProjectExtensions>
+    <Borland.Personality>Default.Personality</Borland.Personality>
+    <Borland.ProjectType />
+    <BorlandProject>
+  <BorlandProject xmlns=""> <Default.Personality> </Default.Personality> </BorlandProject></BorlandProject>
+  </ProjectExtensions>
+  <Target Name="a2Hook">
+    <MSBuild Projects="a2Hook.dproj" Targets="" />
+  </Target>
+  <Target Name="a2Hook:Clean">
+    <MSBuild Projects="a2Hook.dproj" Targets="Clean" />
+  </Target>
+  <Target Name="a2Hook:Make">
+    <MSBuild Projects="a2Hook.dproj" Targets="Make" />
+  </Target>
+  <Target Name="Build">
+    <CallTarget Targets="a2Hook" />
+  </Target>
+  <Target Name="Clean">
+    <CallTarget Targets="a2Hook:Clean" />
+  </Target>
+  <Target Name="Make">
+    <CallTarget Targets="a2Hook:Make" />
+  </Target>
+  <Import Condition="Exists('$(MSBuildBinPath)\Borland.Group.Targets')" Project="$(MSBuildBinPath)\Borland.Group.Targets" />
+</Project>

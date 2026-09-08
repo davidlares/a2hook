@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2026/08/30 11:12:01.920.dproj,C:\Documents and Settings\user\My Documents\RAD Studio\Projects\Project1.dproj=C:\Documents and Settings\user\My Documents\RAD Studio\Projects\a2Hook.dproj</Transaction>
+    <Transaction>2026/08/31 10:11:17.468.dproj,C:\Documents and Settings\user\My Documents\RAD Studio\Projects\a2Hook.dproj=C:\Documents and Settings\user\My Documents\RAD Studio\Projects\a2DELS.dproj</Transaction>
+    <Transaction>2026/08/31 10:11:17.498.dproj,C:\Documents and Settings\user\My Documents\RAD Studio\Projects\a2DELS.dproj=C:\Documents and Settings\user\My Documents\RAD Studio\Projects\a2Hook.dproj</Transaction>
+    <Transaction>2026/08/31 12:03:39.304.pas,C:\Documents and Settings\user\My Documents\RAD Studio\Projects\Unit1.pas=C:\Documents and Settings\user\My Documents\RAD Studio\Projects\Logger.pas</Transaction>
+    <Transaction>2026/08/31 12:03:56.889.pas,C:\Documents and Settings\user\My Documents\RAD Studio\Projects\Unit1.pas=C:\Documents and Settings\user\My Documents\RAD Studio\Projects\HttpClient.pas</Transaction>
+    <Transaction>2026/08/31 12:04:04.901.pas,C:\Documents and Settings\user\My Documents\RAD Studio\Projects\Unit1.pas=C:\Documents and Settings\user\My Documents\RAD Studio\Projects\Hook.pas</Transaction>
+  </Transactions>
+</BorlandProject>

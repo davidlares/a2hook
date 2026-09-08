@@ -1,0 +1,20 @@
+unit Hook;
+
+interface
+
+uses Windows, SysUtils, Classes, dbisamtb, DB, Logger, HttpClient;
+
+function ApplyHook(Parameter: Pointer): Integer; stdcall;
+
+type
+  // DBISAM trigger signature
+  TDBISAMServerTrigger = procedure(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: string; CurrentRecord: TDBISAMRecord) of object;
+  // DBISAM Record data set signature
+  TRecordDataSetAccess = class(TDBISAMRecordDataSet)
+  public
+    property Handle;
+  end;
+implementation
+
+
+end.

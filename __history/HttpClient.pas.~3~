@@ -1,0 +1,11 @@
+unit HttpClient;
+
+interface
+
+implementation
+
+function JsonEscape(const S: string): string;
+
+
+
+end.

@@ -1,0 +1,60 @@
+unit Hook;
+
+interface
+
+uses Windows, SysUtils, Classes, dbisamtb, DB, Logger, HttpClient;
+
+function ApplyHook(Parameter: Pointer): Integer; stdcall;
+
+type
+  // DBISAM trigger signature
+  TDBISAMServerTrigger = procedure(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: string; CurrentRecord: TDBISAMRecord) of object;
+  // DBISAM Record data set signature
+  TRecordDataSetAccess = class(TDBISAMRecordDataSet)
+  public
+    property Handle;
+  end;
+  // hook instance
+  TTriggerHook = class
+  private
+    // table mapper
+    FTableKeys: TStringList;
+    // getting records, PKs and registering table aux function
+    function GetRecordDataSet(CurrentRecord: TDBISAMRecord): TRecordDataSetAccess;
+    function GetPrimaryKeyField(const TableName: string): string;
+    procedure RegisterTables;
+  end;
+  public
+    // hook procedures from engine
+    OriginalAfterInsert: TMethod;
+    OriginalAfterUpdate: TMethod;
+    // constructor / destructor
+    constructor Create;
+    destructor Destroy; override;
+    // hooks declaration
+    procedure HookedAfterInsert(Sender: TObject; TriggerSession: TDBISAMSession;TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+    procedure HookedAfterUpdate(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
+  end;
+implementation
+
+  const
+    // memory offsets for a2Server.exe
+    MAINFORM_PTR_RVA = $270F34;
+    ENGINE_OFFSET_IN_FORM = $0320;
+    ON_AFTER_INSERT_OFFSET = $0128;
+    ON_AFTER_UPDATE_OFFSET = $0140;
+
+  // reading null terminator (stopping sku detection)  
+  function ReadNullTerminatedString(P: PByte): string;
+  var
+    S: string;
+  begin
+    S := '';
+    while (P^ <> 0) do
+    begin
+      S := S + Chr(P^);
+      Inc(P);
+    end;
+    Result := S;
+  end;
+end.
