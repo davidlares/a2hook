@@ -1,4 +1,4 @@
-## A2hook
+## a2Hook
 
 A Reverse-engineered DLL injection and in-process DBISAM trigger interception for `a2Softway` a2Server.exe / dbsrvr
 
@@ -76,7 +76,7 @@ The current implementation sends a compact event such as:
 
 The JSON/HTTP implementation lives in `HttpClient.pas` file
 
-## Why a2hook
+## Why a2Hook
 
 The original goal was to know when records changed in the `a2Softway` database without polling the database continuously.
 
@@ -431,7 +431,7 @@ The `.pas` files are compilation units; they are not separate DLLs. So, you'll n
 
 ### Runtime configuration
 
-Since the data is sent to a local HTTP server on a port, at least create one, but you can see the logs in a hardcoded path: `C:\a2hook\debug.txt`
+Since the data is sent to a local HTTP server on a port, at least create one, but you can see the logs in a hardcoded path: `C:\a2Hook\debug.txt`
 
 ### The event flow
 
