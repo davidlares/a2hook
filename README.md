@@ -465,6 +465,10 @@ Since the data is sent to a local HTTP server on a port, at least create one, bu
 2026-08-31 11:59 - JSON: {"timestamp":"2026-08-31T11:59:43","operation":"UPDATE","table":"Sinventario","keyField":"FI_CODIGO","keyValue":"Y-002"}
 2026-08-31 11:59 - SendEvent HTTP ERROR: EIdSocketError: Socket Error # 10061
 Connection refused.
+2026-08-31 11:59 - *** HookedAfterUpdate FIRED ***
+2026-08-31 11:59 - AfterUpdate TableName: SFixed
+2026-08-31 11:59 - SFixed table is untracked
+2026-08-31 13:18 - === DLL_PROCESS_DETACH: Unloading a2Hook ===
 ```
 
 ## Credits
