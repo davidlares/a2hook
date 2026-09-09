@@ -276,6 +276,7 @@ Instead of moving in that direction, I went for the RecordBuffer.
 
 The working path is:
 
+```
 TDBISAMRecord
       |
       +-- offset +4
@@ -287,6 +288,7 @@ TDBISAMRecord
                     |
                     v
              raw record buffer
+```
 
 The current source reflects this explicitly:
 
@@ -332,7 +334,14 @@ So, there were scenarios in which I needed to perform a cast from `string` to `A
 
 For that reason, you'll see something like
 
-`TDBISAMServerTrigger = procedure(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: string CurrentRecord: TDBISAMRecord) of object;`
+```
+TDBISAMServerTrigger = procedure(
+    Sender: TObject; 
+    TriggerSession: TDBISAMSession; 
+    TriggerDatabase: TDBISAMDatabase; 
+    const TableName: string CurrentRecord: TDBISAMRecord
+) of object;
+```
 
 The above is the original implementation of the trigger
 
