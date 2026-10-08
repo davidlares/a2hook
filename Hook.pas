@@ -19,9 +19,12 @@ type
   private
     // table mapper
     FTableKeys: TStringList;
+    // table offset mapper
+    FTableKeyOffsets: TStringList;
     // getting records, PKs and registering table aux function
     function GetRecordDataSet(CurrentRecord: TDBISAMRecord): TRecordDataSetAccess;
     function GetPrimaryKeyField(const TableName: string): string;
+    function GetPrimaryKeyOffset(const TableName: string): Integer;
     procedure RegisterTables;
   public
     // hook procedures from engine
@@ -31,6 +34,7 @@ type
     constructor Create;
     destructor Destroy; override;
     // hooks declaration
+    procedure FindStringsInRecord(CurrentRecord: TDBISAMRecord);
     procedure HookedAfterInsert(Sender: TObject; TriggerSession: TDBISAMSession;TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
     procedure HookedAfterUpdate(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
   end;
@@ -60,9 +64,15 @@ implementation
   procedure TTriggerHook.RegisterTables;
   begin
     FTableKeys := TStringList.Create;
+    FTableKeyOffsets := TStringList.Create;
+    // adding values
     FTableKeys.Values['Sinventario'] := 'FI_CODIGO';
     FTableKeys.Values['SinvDep'] := 'FT_CODIGOPRODUCTO';
     FTableKeys.Values['a2InvCostosPrecios'] := 'FIC_CODEITEM';
+    // offsets
+    FTableKeyOffsets.Values['Sinventario'] := '26';
+    FTableKeyOffsets.Values['a2InvCostosPrecios'] := '26';
+    FTableKeyOffsets.Values['SinvDep'] := '29';
   end;
   // constructor
   constructor TTriggerHook.Create;
@@ -73,6 +83,7 @@ implementation
   destructor TTriggerHook.Destroy;
   begin
     FTableKeys.Free;
+    FTableKeyOffsets.Free;
     inherited;
   end;
   // hook instance (get record data set)
@@ -92,6 +103,7 @@ implementation
     RDS: TRecordDataSetAccess;
     CleanTableName: string;
     RecordBuffer: Pointer;
+    KeyOffset: Integer;
     KeyField: string;
     KeyValue: string;
   begin
@@ -109,10 +121,10 @@ implementation
     end;
     // then
     try
-    // avoid Sfixed
-    if CleanTableName = 'SFixed' then
+    // avoid Sfixed and others
+    if FTableKeys.IndexOfName(CleanTableName) = -1 then
     begin
-      WriteLog('SFixed table is untracked');
+      WriteLog('Untracked table: ' + CleanTableName);
       Exit;
     end;
     // getting the PK
@@ -142,7 +154,8 @@ implementation
         Exit;
       end;
       // 26 positions after the buffer, we found the SKU
-      KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + 26));
+      KeyOffset := GetPrimaryKeyOffset(CleanTableName);
+      KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + KeyOffset));
       // found
       WriteLog('Extracted KeyValue: [' + KeyValue + ']');
       // sending data
@@ -153,6 +166,11 @@ implementation
         WriteLog('INSERT ERR: ' + E.ClassName + ': ' + E.Message);
     end;
   end;
+  // offsets
+  function TTriggerHook.GetPrimaryKeyOffset(const TableName: string): Integer;
+  begin
+    Result := StrToIntDef(FTableKeyOffsets.Values[TableName], -1);
+  end;
   // after update hook
   procedure TTriggerHook.HookedAfterUpdate(Sender: TObject; TriggerSession: TDBISAMSession; TriggerDatabase: TDBISAMDatabase; const TableName: AnsiString; CurrentRecord: TDBISAMRecord);
   var
@@ -160,6 +178,7 @@ implementation
     RDS: TRecordDataSetAccess;
     CleanTableName: string;
     RecordBuffer: Pointer;
+    KeyOffset: Integer;
     KeyField: string;
     KeyValue: string;
   begin
@@ -176,9 +195,10 @@ implementation
     end;
     // running hook procedure from DLL
     try
-      if CleanTableName = 'SFixed' then
+      // avoid Sfixed and others
+      if FTableKeys.IndexOfName(CleanTableName) = -1 then
       begin
-        WriteLog('SFixed table is untracked');
+        WriteLog('Untracked table: ' + CleanTableName);
         Exit;
       end;
       // getting the PK
@@ -207,8 +227,10 @@ implementation
           WriteLog('RecordBuffer = NIL');
           Exit;
         end;
+        // getting the offset
+        KeyOffset := GetPrimaryKeyOffset(CleanTableName);
         // key value found
-        KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + 26));
+        KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + KeyOffset));
         // extracted SKU
         WriteLog('Extracted KeyValue: [' + KeyValue + ']');
         // sending update scenario
@@ -218,6 +240,64 @@ implementation
       on E: Exception do
         WriteLog('UPDATE ERR: ' + E.ClassName + ': ' + E.Message);
     end;
+  end;
+  // temporary procedure
+  procedure TTriggerHook.FindStringsInRecord(CurrentRecord: TDBISAMRecord);
+  var
+    RDS: TRecordDataSetAccess;
+    RecordBuffer: Pointer;
+    RecordSize: Integer;
+    I, StartPos, Len: Integer;
+    B: Byte;
+    S: string;
+  begin
+    WriteLog('=== STRING SCAN START ===');
+    if CurrentRecord = nil then
+      Exit;
+    // getting the record size
+    RecordSize := CurrentRecord.RecordSize;
+    RDS := GetRecordDataSet(CurrentRecord);
+    if RDS = nil then
+    begin
+      WriteLog('RDS = NIL');
+      Exit;
+    end;
+    // getting the record buffer
+    RecordBuffer := Pointer(PCardinal(NativeUInt(RDS) + 640)^);
+    if RecordBuffer = nil then
+    begin
+      WriteLog('RecordBuffer = NIL');
+      Exit;
+    end;
+    // initiating
+    I := 0;
+    while I < RecordSize do
+    begin
+      B := PByte(NativeUInt(RecordBuffer) + I)^;
+      { Start of a printable ASCII sequence }
+      if (B >= 32) and (B <= 126) then
+      begin
+        StartPos := I;
+        S := '';
+        while I < RecordSize do
+        begin
+          B := PByte(NativeUInt(RecordBuffer) + I)^;
+          if (B < 32) or (B > 126) then
+            Break;
+          S := S + Chr(B);
+          Inc(I);
+        end;
+        // length evaluation
+        Len := Length(S);
+        if Len >= 2 then
+        begin
+          WriteLog(Format('String @ %d len=%d: [%s]',[StartPos, Len, S]));
+        end;
+      end
+      else
+        Inc(I);
+      end;
+      WriteLog('=== STRING SCAN END ===');
   end;
   // apply hook internal function
   function ApplyHook(Parameter: Pointer): Integer; stdcall;

@@ -5,12 +5,13 @@
   <ItemGroup />
   <ItemGroup>
     <Projects Include="a2Hook.dproj" />
+    <Projects Include="ServiceInjector.dproj" />
   </ItemGroup>
   <ProjectExtensions>
     <Borland.Personality>Default.Personality</Borland.Personality>
     <Borland.ProjectType />
     <BorlandProject>
-  <BorlandProject xmlns=""> <Default.Personality> </Default.Personality> </BorlandProject></BorlandProject>
+<BorlandProject xmlns=""><Default.Personality></Default.Personality></BorlandProject></BorlandProject>
   </ProjectExtensions>
   <Target Name="a2Hook">
     <MSBuild Projects="a2Hook.dproj" Targets="" />
@@ -21,14 +22,23 @@
   <Target Name="a2Hook:Make">
     <MSBuild Projects="a2Hook.dproj" Targets="Make" />
   </Target>
+  <Target Name="ServiceInjector">
+    <MSBuild Projects="ServiceInjector.dproj" Targets="" />
+  </Target>
+  <Target Name="ServiceInjector:Clean">
+    <MSBuild Projects="ServiceInjector.dproj" Targets="Clean" />
+  </Target>
+  <Target Name="ServiceInjector:Make">
+    <MSBuild Projects="ServiceInjector.dproj" Targets="Make" />
+  </Target>
   <Target Name="Build">
-    <CallTarget Targets="a2Hook" />
+    <CallTarget Targets="a2Hook;ServiceInjector" />
   </Target>
   <Target Name="Clean">
-    <CallTarget Targets="a2Hook:Clean" />
+    <CallTarget Targets="a2Hook:Clean;ServiceInjector:Clean" />
   </Target>
   <Target Name="Make">
-    <CallTarget Targets="a2Hook:Make" />
+    <CallTarget Targets="a2Hook:Make;ServiceInjector:Make" />
   </Target>
   <Import Condition="Exists('$(MSBuildBinPath)\Borland.Group.Targets')" Project="$(MSBuildBinPath)\Borland.Group.Targets" />
 </Project>
