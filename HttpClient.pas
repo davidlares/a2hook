@@ -47,7 +47,7 @@ begin
     // stream body
     Body := TStringStream.Create(UTF8Encode(Json));
     try
-      HTTP.Post('http://127.0.0.1:3000/api/db-trigger', Body);
+      HTTP.Post('http://10.0.0.10:3000/api/db-trigger', Body);
     finally
       Body.Free;
     end;

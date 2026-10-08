@@ -163,7 +163,7 @@ This unit is deliberately independent of the DBISAM hook logic. It contains:
 4. Timeout configuration.
 5. HTTP Error logging.
 
-The current implementation posts to: `http://127.0.0.1:3000/api/db-trigger`
+The current implementation posts to: `http://10.0.0.10:3000/api/db-trigger`
 
 #### Logger.pas
 
@@ -302,14 +302,24 @@ There were hardcoded scenarios: simply reverse-engineered offsets for the target
 
 ### With the record buffer in place
 
-After obtaining the raw buffer, the investigation used memory dumps to locate the actual key bytes. For the `Sinventario` test record, the key `Y-002` appeared at offset 26 from the record buffer. The working extraction is therefore:
+After obtaining the raw buffer, the investigation used memory dumps to locate the actual key bytes. For the `Sinventario` working record, the key `Y-002` appeared at a certain offset from the record buffer. The working extraction is therefore:
 
-`KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + 26));`
+```
+KeyOffset := GetPrimaryKeyOffset(CleanTableName);
+KeyValue := ReadNullTerminatedString(PByte(NativeUInt(RecordBuffer) + KeyOffset));
+```
 
 This is a format-specific binary extraction technique. It works because the target database record layout was empirically reconstructed for the relevant table/build. It should not be generalized to every DBISAM table.
 
-Actually, this was luck, and it gracefully met the other scenarios as well
+However, to meet all scenarios I created a `FTableKeysOffsets` to store the offset value per database table, for `Sinventario` and `a2InvCostosPrecios` the `26` offfset was the right choice, but for `SinvDep` the thing changed to the `29` offset.
 
+In the RegisterTables procedure you can see it
+
+```
+FTableKeyOffsets.Values['Sinventario'] := '26';
+FTableKeyOffsets.Values['a2InvCostosPrecios'] := '26';
+FTableKeyOffsets.Values['SinvDep'] := '29';
+```
 ## The working scenario
 
 I needed real-time changes from A2Softway's `a2Server.exe` to a middleware for third-party integrations
