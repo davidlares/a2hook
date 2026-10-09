@@ -159,7 +159,7 @@ implementation
       // found
       WriteLog('Extracted KeyValue: [' + KeyValue + ']');
       // sending data
-      SendEvent(TableName, KeyField, KeyValue, 'INSERT');
+      SendEventAsync(TableName, KeyField, KeyValue, 'INSERT');
     end;
     except
       on E: Exception do
@@ -234,7 +234,7 @@ implementation
         // extracted SKU
         WriteLog('Extracted KeyValue: [' + KeyValue + ']');
         // sending update scenario
-        SendEvent(TableName, KeyField, KeyValue, 'UPDATE');
+        SendEventAsync(TableName, KeyField, KeyValue, 'UPDATE');
     end;
     except
       on E: Exception do
